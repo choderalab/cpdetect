@@ -10,6 +10,7 @@ import sys
 
 verbose = False
 
+
 def logger(name='cpDetector', pattern='%(asctime)s %(levelname)s %(name)s: %(message)s',
            date_format='%H:%M:%S', handler=logging.StreamHandler(sys.stdout)):
     """
@@ -21,12 +22,12 @@ def logger(name='cpDetector', pattern='%(asctime)s %(levelname)s %(name)s: %(mes
     :return: The logger
     """
     _logger = logging.getLogger(name)
-    _logger.setLevel(log_level())
+    _logger.setLevel(log_level(verbose))
 
     if not _logger.handlers:
         formatter = logging.Formatter(pattern, date_format)
         handler.setFormatter(formatter)
-        handler.setLevel(log_level())
+        handler.setLevel(log_level(verbose))
         _logger.addHandler(handler)
         _logger.propagate = False
     return _logger
@@ -36,4 +37,4 @@ def log_level(verbose=verbose):
     if verbose:
         return logging.DEBUG
     else:
-        return logging.INFO+1
+        return logging.INFO
