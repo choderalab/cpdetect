@@ -86,7 +86,7 @@ class Detector(object):
         mean, var = self._distribution.mean_var(obs)
 
         # the denominator. This is the easy part.
-        denom = (np.pi**1.5) * (n*var)**(-n/2.0 + 0.5) * self.gamma[n]
+        denom = (np.pi**1.5) * mpf(n*var)**(-n/2.0 + 0.5) * self.gamma[n]
 
         # BEGIN weight calculation
         # the numerator. A little trickier.
@@ -104,8 +104,8 @@ class Detector(object):
             mean_a2 = mean_a**2
             mean_b2 = mean_b**2
 
-            wnumf1 = n_a**(-0.5*n_a + 0.5) * var_a**(-0.5*n_a + 1) * self.gamma[n_a]
-            wnumf2 = n_b**(-0.5*n_b + 0.5) * var_b**(-0.5*n_b + 1) * self.gamma[n_b]
+            wnumf1 = mpf(n_a)**(-0.5*n_a + 0.5) * mpf(var_a)**(-0.5*n_a + 1) * self.gamma[n_a]
+            wnumf2 = mpf(n_b)**(-0.5*n_b + 0.5) * mpf(var_b)**(-0.5*n_b + 1) * self.gamma[n_b]
             wdenom = (var_a + var_b) * (mean_a2*mean_b2)
 
             weights.append((wnumf1*wnumf2)/wdenom)
