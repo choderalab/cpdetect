@@ -11,14 +11,23 @@ from mpmath import mpf, gamma, log
 from cpdetect.utils import logger
 import time
 import pandas as pd
+import math
 
 
 class Detector(object):
     """
+    Bayesian change point detection.
 
+    :parameter
+    observations: list of numpy arrays
+        trajectories to find change point
+    distribution: str
+        distribution of underlying process (normal or log_normal)
+    log_odds_threshold: int
+        desired threshold. If log odds (log of Bayes factor) is greater than this threshold, segment will be split.
     """
 
-    def __init__(self, observations, distribution):
+    def __init__(self, observations, distribution, log_odds_threshold=100):
         """
 
         :param observations: list of numpy arrays
@@ -31,6 +40,7 @@ class Detector(object):
         self._Ts = [len(o) for o in observations]
         self.change_points = {}  # Dictionary containing change point time and its likelihood
         self.gamma = [-99, -99, -99]  # Array with length as longest trajectory
+        self.threshold = log_odds_threshold
 
         if distribution == 'log_normal':
             self._distribution = LogNormal()
@@ -108,14 +118,18 @@ class Detector(object):
         log_num = log(num)
         log_denom = log(denom)
         log_odds = log_num - log_denom
-        logger().info('num: ' + str(num) + ' log num: ' + str(log_num))
-        logger().info('denom: ' + str(denom) + ' log denom: ' + str(log_denom))
-        logger().info('log odds: ' + str(log_odds))
+        logger().info('    num: ' + str(num) + ' log num: ' + str(log_num))
+        logger().info('    denom: ' + str(denom) + ' log denom: ' + str(log_denom))
+        logger().info('    log odds: ' + str(log_odds))
 
         # If there is a change point, then logodds will be greater than 0
-        if log_odds < 100:
+        # Check for nan. This comes up if using log normal for a normal distribution.
+        if math.isnan(log_odds):
+            raise ValueError('Are you using the correct distribution?')
+        if log_odds < self.threshold:
 
-            logger().info('Log Odds: ' + str(log_odds) + ' is less than 0. No change point found')
+            logger().info('    Log Odds: ' + str(log_odds) + ' is less than threshold ' + str(self.threshold) +
+                          '. No change point found')
             return None
         return weights.argmax(), log_odds
 
@@ -166,18 +180,18 @@ class Detector(object):
             index of trajectory
         """
         # recursive function to find all ts and logg odds
-
+        logger().info('Trying to split segment start at ' + str(start) + ' end ' + str(end))
         result = self._normal_lognormal_bf(obs[start:end])
 
         if result is None:
-            logger().info("Can't split segment start at " + str(start) + "end at " + str(end))
+            logger().info("    Can't split segment start at " + str(start) + " end at " + str(end))
             return
         else:
             log_odds = result[-1]
             ts = start + result[0]
             self.change_points['traj_%s' % str(itraj)] = self.change_points['traj_%s' % str(itraj)].append(
                     {'ts': ts, 'log_odds': log_odds, 'start_end': (start, end)}, ignore_index=True)
-            logger().info('Found a new change point at: ' + str(ts))
+            logger().info('    Found a new change point at: ' + str(ts) + '!!')
             self._split(obs, start, ts, itraj)
             self._split(obs, ts+1, end, itraj)
 
