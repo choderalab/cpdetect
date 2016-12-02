@@ -7,25 +7,37 @@ Author: Chaya D. Stern
 
 import numpy as np
 import copy
-from scipy.special import gamma
+from mpmath import mpf, gamma, log
 from cpdetect.utils import logger
 import time
+import pandas as pd
 
 
 class Detector(object):
+    """
+
+    """
 
     def __init__(self, observations, distribution):
+        """
+
+        :param observations: list of numpy arrays
+            list of observation trajectories
+        :param distribution: str
+            distribution of process (log_normal or normal)
+        """
         self._observations = copy.deepcopy(observations)
         self._nobs = len(observations)
         self._Ts = [len(o) for o in observations]
-        self.bf = {}  # Dictionary containing Bayes factor for segment
-        self.ts = {}  # Dictionary containing change point time and its likelihood
-        self.gamma = np.zeros(observations.shape(-1))  # Array with length as longest trajectory
+        self.change_points = {}  # Dictionary containing change point time and its likelihood
+        self.gamma = [-99, -99, -99]  # Array with length as longest trajectory
 
         if distribution == 'log_normal':
-            self.distribution = LogNormal()
-        if distribution == 'normal' or distribution == 'gaussian':
-            self.distribution = Normal()
+            self._distribution = LogNormal()
+            self.distribution = 'log_normal'
+        elif distribution == 'normal' or distribution == 'gaussian':
+            self._distribution = Normal()
+            self.distribution = 'normal'
         else:
             raise ValueError('Use log_normal or normal distribution. I got something else')
 
@@ -39,7 +51,7 @@ class Detector(object):
 
     @property
     def observation_lengths(self):
-        """ Return lengths of trajecries"""
+        """ Return lengths of trajectories"""
         return self._Ts
 
     def _normal_lognormal_bf(self, obs):
@@ -47,24 +59,24 @@ class Detector(object):
         Calculate Bayes factor P(D|H_2) / P(D|H_1) for normal or log-normal data
 
         :parameter:
-        itraj: int
-            index of observation trajectory to process
-        start: int
-            index of start of segment to compute bayes factor
-        end: int
-            index of end of segment to compute bayes factor
+        obs: np.array
+            segment of trajectory to calculate Bayes factor
         :return:
+        ts: int
+             time point for split (argmax)
+        log_odds: float
+
         """
-        #obs = self.observations[itraj][start:end]
         n = len(obs)
         if n < 6:
+            logger().info('Segment is less than 6 points')
             return None  # can't find a cp in data this small
 
         # Calculate mean and var
-        mean, var = self.distribution.mean_var(obs)
+        mean, var = self._distribution.mean_var(obs)
 
         # the denominator. This is the easy part.
-        denom = (np.pi**1.5) * (N*var)**(-n/2.0 + 0.5) * self.gamma[n]
+        denom = (np.pi**1.5) * (n*var)**(-n/2.0 + 0.5) * self.gamma[n]
 
         # BEGIN weight calculation
         # the numerator. A little trickier.
@@ -76,8 +88,8 @@ class Detector(object):
             data_b = obs[i:]
             n_b = len(data_b)
 
-            mean_a, var_a = self.distribution.mean_var(data_a)
-            mean_b, var_b = self.distribution.mean_var(data_b)
+            mean_a, var_a = self._distribution.mean_var(data_a)
+            mean_b, var_b = self._distribution.mean_var(data_b)
 
             mean_a2 = mean_a**2
             mean_b2 = mean_b**2
@@ -93,15 +105,17 @@ class Detector(object):
         # END weight calculation
 
         num = 2.0**2.5 * abs(mean) * weights.mean()
-        log_num = np.log(num)
-        log_denom = np.log(denom)
+        log_num = log(num)
+        log_denom = log(denom)
         log_odds = log_num - log_denom
         logger().info('num: ' + str(num) + ' log num: ' + str(log_num))
         logger().info('denom: ' + str(denom) + ' log denom: ' + str(log_denom))
-        logger().infor('log odds: ' + str(log_odds))
+        logger().info('log odds: ' + str(log_odds))
 
         # If there is a change point, then logodds will be greater than 0
-        if log_odds < 0:
+        if log_odds < 100:
+
+            logger().info('Log Odds: ' + str(log_odds) + ' is less than 0. No change point found')
             return None
         return weights.argmax(), log_odds
 
@@ -109,8 +123,8 @@ class Detector(object):
         """
         Calculate gamma for all N
         """
-        for i in range(self.gamma.shape):
-            self.gamma[i] = gamma(0.5*i - 1)
+        for i in range(3, max(self._Ts) + 1):
+            self.gamma.append(gamma(0.5*i - 1))
 
     def detect_cp(self):
         """
@@ -122,27 +136,54 @@ class Detector(object):
         logger().info('Running change point detector')
         logger().info('   input observations: '+str(self.nobservations)+ ' of length ' + str(self.observation_lengths))
 
+        # Generate gamma table
+        self._generate_gamma_table()
+
         initial_time = time.time()
 
         for k in range(self._nobs):
+            logger().info('Running cp detector on traj ' + str(k))
+            self.change_points['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
             obs = self._observations[k]
-            self._split(obs, 0, self.observation_lengths[k])
+            self._split(obs, 0, self.observation_lengths[k], k)
             self._emitting_state(k)
 
         final_time = time.time()
 
         logger().info('Elapsed time: ' + str(final_time-initial_time))
 
-    def _split(self, obs, start, end):
+    def _split(self, obs, start, end,  itraj):
+        """
+        This function takes an array of observations and checks if it should be split
+
+        :param obs: np.array
+            trajectory to check for change point
+        :param start: int
+            start of segment to check for change point
+        :param end: int
+            end of segment
+        :param itraj: int
+            index of trajectory
+        """
         # recursive function to find all ts and logg odds
 
-        pass
+        result = self._normal_lognormal_bf(obs[start:end])
+
+        if result is None:
+            logger().info("Can't split segment start at " + str(start) + "end at " + str(end))
+            return
+        else:
+            log_odds = result[-1]
+            ts = start + result[0]
+            self.change_points['traj_%s' % str(itraj)] = self.change_points['traj_%s' % str(itraj)].append(
+                    {'ts': ts, 'log_odds': log_odds, 'start_end': (start, end)}, ignore_index=True)
+            logger().info('Found a new change point at: ' + str(ts))
+            self._split(obs, start, ts, itraj)
+            self._split(obs, ts+1, end, itraj)
 
     def _emitting_state(self, itraj):
         # Find emitting state to draw the step funciont
         pass
-
-
 
 
 class LogNormal(object):
