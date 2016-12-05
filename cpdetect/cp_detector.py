@@ -7,7 +7,6 @@ Author: Chaya D. Stern
 
 import numpy as np
 import copy
-from mpmath import mpf, gamma, log
 from cpdetect.utils import logger
 import time
 import pandas as pd
