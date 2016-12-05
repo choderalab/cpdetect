@@ -12,7 +12,7 @@ data_2 = np.load('files/data2.npz')
 
 # Convert to cpDetect format
 data_2 = [data_2[i] for i in data_2.files]
-detector = cpDetector(data_2, distribution='log_normal')
+
 
 class TestCpDetect(unittest.TestCase):
 
@@ -70,6 +70,8 @@ class TestCpDetect(unittest.TestCase):
         self.assertTrue(df['ts'].equals(detector.change_points['traj_0']['ts']))
         self.assertTrue(df['start_end'].equals(detector.change_points['traj_0']['start_end']))
         self.assertAlmostEqual(df['log_odds'][0], detector.change_points['traj_0']['log_odds'][0])
+        self.assertTrue(len(detector.change_points['traj_0']), 2)
+        self.assertTrue(len(detector.change_points['traj_1']), 3)
 
 
 
