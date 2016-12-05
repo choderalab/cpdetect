@@ -12,6 +12,7 @@ from cpdetect.utils import logger
 import time
 import pandas as pd
 import math
+from scipy.special import gammaln
 
 
 class Detector(object):
@@ -27,7 +28,7 @@ class Detector(object):
         desired threshold. If log odds (log of Bayes factor) is greater than this threshold, segment will be split.
     """
 
-    def __init__(self, observations, distribution, log_odds_threshold=0):
+    def __init__(self, observations, distribution, log_odds_threshold=0, log_scale=False):
         """
 
         :param observations: list of numpy arrays
@@ -39,6 +40,7 @@ class Detector(object):
         self._nobs = len(observations)
         self._Ts = [len(o) for o in observations]
         self.change_points = {}  # Dictionary containing change point time and its likelihood
+        self.loggamma = [-99, -99, -99]
         self.gamma = [-99, -99, -99]  # Array with length as longest trajectory
         self.threshold = log_odds_threshold
 
@@ -52,7 +54,10 @@ class Detector(object):
             raise ValueError('Use log_normal or normal distribution. I got something else')
 
         # Generate gamma table
-        self._generate_gamma_table()
+        if log_scale:
+            self._generate_loggamma_table()
+        else:
+            self._generate_gamma_table()
 
     @property
     def nobservations(self):
@@ -140,6 +145,13 @@ class Detector(object):
         for i in range(3, max(self._Ts) + 1):
             self.gamma.append(gamma(0.5*i - 1))
 
+    def _generate_loggamma_table(self):
+        """
+        calculate log gamma for all N
+        """
+        for i in range(3, max(self._Ts) + 1):
+            self.loggamma.append(gammaln(0.5*i - 1))
+
     def detect_cp(self):
         """
         Bayesian detection of Intensity changes. This function detects the changes, their timepoints and then
@@ -148,15 +160,14 @@ class Detector(object):
 
         logger().info('=======================================')
         logger().info('Running change point detector')
+        logger().info('=======================================')
         logger().info('   input observations: '+str(self.nobservations)+ ' of length ' + str(self.observation_lengths))
-
-        # Generate gamma table
-        self._generate_gamma_table()
 
         initial_time = time.time()
 
         for k in range(self._nobs):
             logger().info('Running cp detector on traj ' + str(k))
+            logger().info('--------------------------------')
             self.change_points['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
             obs = self._observations[k]
             self._split(obs, 0, self.observation_lengths[k], k)
@@ -191,7 +202,7 @@ class Detector(object):
             ts = start + result[0]
             self.change_points['traj_%s' % str(itraj)] = self.change_points['traj_%s' % str(itraj)].append(
                     {'ts': ts, 'log_odds': log_odds, 'start_end': (start, end)}, ignore_index=True)
-            logger().info('      Found a new change point at: ' + str(ts) + '!!')
+            logger().info('    Found a new change point at: ' + str(ts) + '!!')
             self._split(obs, start, ts, itraj)
             self._split(obs, ts+1, end, itraj)
 
@@ -202,7 +213,8 @@ class Detector(object):
 
 class LogNormal(object):
 
-    def mean_var(self, data):
+    @classmethod
+    def mean_var(cls, data):
         """
         calculate log normal mean and variance (loc and scale)
         :parameter:
@@ -221,6 +233,7 @@ class LogNormal(object):
 
 class Normal(object):
 
-    def mean_var(self, data):
+    @classmethod
+    def mean_var(cls, data):
         return data.mean(), data.var()
 
