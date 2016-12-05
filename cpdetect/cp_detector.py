@@ -197,6 +197,24 @@ class Detector(object):
         # Find emitting state to draw the step funciont
         pass
 
+    def to_csv(self, filename=None):
+        """
+        export change_points data frame to csv file
+        :parameter:
+            filename: str
+
+        :return:
+            csv if no filename given. Otherwise, saves csv file
+        """
+        frames = []
+        for i in self.change_points:
+            frames.append(self.change_points[i])
+        all = pd.concat(frames)
+
+        if filename:
+            all.to_csv(filename)
+        else:
+            return all.to_csv()
 
 class LogNormal(object):
 
