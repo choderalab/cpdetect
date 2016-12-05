@@ -22,7 +22,7 @@ see `examples/`
 Reference
 ---------
 * Ensign DL and Pande VS. Bayesian Detection of Intensity Changes in Single Molecule and Molecular Dynamics Trajectories.
-J. Phys. Chem B 114:280 (2010) [DOI](10.1021/jp906786b)
+J. Phys. Chem B 114:280 (2010) [DOI](http://pubs.acs.org/doi/abs/10.1021/jp906786b)
 
 
 
