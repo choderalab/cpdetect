@@ -39,6 +39,7 @@ class Detector(object):
         self._nobs = len(observations)
         self._Ts = [len(o) for o in observations]
         self.change_points = {}  # Dictionary containing change point time and its likelihood
+        self.state_emission = {}  # Dictionary containing state's mean and sigma for segment
         self.loggamma = [-99, -99, -99]
         self.threshold = log_odds_threshold
 
@@ -158,7 +159,11 @@ class Detector(object):
             self.change_points['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
             obs = self._observations[k]
             self._split(obs, 0, self.observation_lengths[k], k)
-            self._emitting_state(k)
+            logger().info('Finding state means for segments')
+            logger().info('---------------------------------')
+            self.state_emission['traj_%s' % str(k)] = pd.DataFrame(columns=['partition', 'sample_mu', 'sample_sigma',
+                                                                            'mean_cutoff'])
+            self._emitting_state(obs, k)
 
         final_time = time.time()
 
@@ -193,9 +198,54 @@ class Detector(object):
             self._split(obs, start, ts, itraj)
             self._split(obs, ts+1, end, itraj)
 
-    def _emitting_state(self, itraj):
-        # Find emitting state to draw the step funciont
-        pass
+    def _emitting_state(self, itraj, obs):
+        """Find emitting state to draw the step function
+        :parameter itraj: int
+            index of trajectory
+        """
+        # First sort ts of traj
+        ts = self.change_points['traj_%s' % str(itraj)]['ts'].values
+        ts.sort()
+
+        # populate data frame with partitions, sample mean and sigma
+        partitions = [(0, ts[0])]
+        mean, var = self._distribution.mean_var(self._observations[itraj][0:ts[0]])
+        means = [mean]
+        sigmas = [var]
+        for i, j in enumerate(ts):
+            try:
+                partitions.append((j+1, ts[i+1]))
+                mean, var = self._distribution.mean_var(self._observations[itraj][j+1:ts[i+1]])
+                means.append(mean)
+                sigmas.append(var)
+
+            except IndexError:
+                partitions.append((ts[-1]+1, self.observation_lengths[itraj]-1))
+                mean, var = self._distribution.mean_var(self._observations[itraj][ts[-1]+1:self.observation_lengths[itraj]-1])
+                means.append(mean)
+                sigmas.append(var)
+        self.state_emission['traj_%s' % str(itraj)]['partition'] = partitions
+        self.state_emission['traj_%s' % str(itraj)]['sample_mu'] = means
+        self.state_emission['traj_%s' % str(itraj)]['sample_sigma'] = sigmas
+
+        # Sort all information based on sample mu
+        self.state_emission['traj_%s' % str(itraj)].sort('sample_mu', inplace=True)
+        self.state_emission['traj_%s' % str(itraj)].reset_index(inplace=True)
+
+        self._split_states(obs, 0, self.observation_lengths[itraj], itraj)
+
+    # def _split_states(self, obs, start, end, itraj):
+    #     result = self._partition_bf(obs[start:end])
+    #
+    #     if result is None:
+    #         return
+    #     else:
+    #         split = result[0] + start
+    #         mean_cutoff = self.state_emission['traj_%s' % str(itraj)]['sample_mu'][split]
+    #         # ToDo find mean cutoff. Also, figure out how to partition dataFrame according to split and store relevant
+    #         # info
+    #         self._split_states(obs, start, split, itraj)
+    #         self._split_states(obs, split+1, end, itraj)
 
     def to_csv(self, filename=None):
         """
