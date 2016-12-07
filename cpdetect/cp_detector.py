@@ -42,6 +42,7 @@ class Detector(object):
         self.state_emission = {}  # Dictionary containing state's mean and sigma for segment
         self.loggamma = [-99, -99, -99]
         self.threshold = log_odds_threshold
+        self.step_function = {}
 
         if distribution == 'log_normal':
             self._distribution = LogNormal()
@@ -161,9 +162,7 @@ class Detector(object):
             self._split(obs, 0, self.observation_lengths[k], k)
             logger().info('Finding state means for segments')
             logger().info('---------------------------------')
-            self.state_emission['traj_%s' % str(k)] = pd.DataFrame(columns=['partition', 'sample_mu', 'sample_sigma',
-                                                                            'mean_cutoff'])
-            self._emitting_state(obs, k)
+            self._generate_step_function(obs, k)
 
         final_time = time.time()
 
@@ -198,30 +197,32 @@ class Detector(object):
             self._split(obs, start, ts, itraj)
             self._split(obs, ts+1, end, itraj)
 
-    def _emitting_state(self, itraj, obs):
+    def _generate_step_function(self, obs, itraj):
         """Find emitting state to draw the step function
         :parameter itraj: int
             index of trajectory
         """
+
+        self.state_emission['traj_%s' % str(itraj)] = pd.DataFrame(columns=['partition', 'sample_mu', 'sample_sigma'])
+
         # First sort ts of traj
         ts = self.change_points['traj_%s' % str(itraj)]['ts'].values
         ts.sort()
-
         # populate data frame with partitions, sample mean and sigma
-        partitions = [(0, ts[0])]
-        mean, var = self._distribution.mean_var(self._observations[itraj][0:ts[0]])
+        partitions = [(0, int(ts[0]))]
+        mean, var = self._distribution.mean_var(obs[0:ts[0]])
         means = [mean]
         sigmas = [var]
         for i, j in enumerate(ts):
             try:
-                partitions.append((j+1, ts[i+1]))
-                mean, var = self._distribution.mean_var(self._observations[itraj][j+1:ts[i+1]])
+                partitions.append((int(j+1), int(ts[i+1])))
+                mean, var = self._distribution.mean_var(obs[j+1:ts[i+1]])
                 means.append(mean)
                 sigmas.append(var)
 
             except IndexError:
-                partitions.append((ts[-1]+1, self.observation_lengths[itraj]-1))
-                mean, var = self._distribution.mean_var(self._observations[itraj][ts[-1]+1:self.observation_lengths[itraj]-1])
+                partitions.append((int(ts[-1]+1), int(self.observation_lengths[itraj]-1)))
+                mean, var = self._distribution.mean_var(obs[ts[-1]+1:len(obs)-1])
                 means.append(mean)
                 sigmas.append(var)
         self.state_emission['traj_%s' % str(itraj)]['partition'] = partitions
@@ -229,23 +230,107 @@ class Detector(object):
         self.state_emission['traj_%s' % str(itraj)]['sample_sigma'] = sigmas
 
         # Sort all information based on sample mu
-        self.state_emission['traj_%s' % str(itraj)].sort('sample_mu', inplace=True)
-        self.state_emission['traj_%s' % str(itraj)].reset_index(inplace=True)
+        # self.state_emission['traj_%s' % str(itraj)].sort('sample_mu', inplace=True)
+        # self.state_emission['traj_%s' % str(itraj)].reset_index(inplace=True)
 
-        self._split_states(obs, 0, self.observation_lengths[itraj], itraj)
+        # generate step function
+        self.step_function['traj_%s' % str(itraj)] = np.ones(self.observation_lengths[itraj]-1)
+        for index, row in self.state_emission['traj_0'].iterrows():
+            self.step_function['traj_%s' % str(itraj)][row['partition'][0]:row['partition'][1]+1] = np.exp(row['sample_mu'])
+
+
+
+
+        #self._split_states(obs, 0, len(self.state_emission['traj_%s' % str(itraj)]), itraj)
 
     # def _split_states(self, obs, start, end, itraj):
-    #     result = self._partition_bf(obs[start:end])
+    #     result = self._partition_bf(obs, start, end, itraj)
     #
     #     if result is None:
     #         return
     #     else:
     #         split = result[0] + start
+    #         # if start == split:
+    #         #     split += 1 # prevents infinite loops
     #         mean_cutoff = self.state_emission['traj_%s' % str(itraj)]['sample_mu'][split]
-    #         # ToDo find mean cutoff. Also, figure out how to partition dataFrame according to split and store relevant
-    #         # info
-    #         self._split_states(obs, start, split, itraj)
+    #         logger().info('    Found a new state. Mean cutoff: ' + str(mean_cutoff))
+    #         logger().debug('   start: ' + str(start) + ' end: ' + str(end))
+    #         logger().info('    split: ' + str(split))
+    #         self.states['traj_%s' % itraj].append(split)
+    #         #self.state_emission['traj_%s' % str(itraj)].ix[start:split, 'mean_cutoff'] = mean_cutoff
+    #         self.state_emission['traj_%s' % str(itraj)].ix[split:end, 'mean_cutoff'] = mean_cutoff
+    #         self._split_states(obs, start, split+1, itraj)
     #         self._split_states(obs, split+1, end, itraj)
+    #
+    # def _partition_bf(self, obs, start, end, itraj):
+    #     if start == end or start + 1 == end or start == end -1:
+    #         logger().debug("Can't partition one segment")
+    #         return None
+    #
+    #     partitions = self.state_emission['traj_%s' % str(itraj)]['partition'][start:end].values
+    #
+    #     obs_all = obs[partitions[0][0]:partitions[0][1]]
+    #     for i in partitions[1:]:
+    #         obs_all = np.concatenate((obs_all, obs[i[0]:i[1]]))
+    #     n = len(obs_all)
+    #
+    #     # Calculate mean and var
+    #     mean, var = self._distribution.mean_var(obs)
+    #
+    #     # the denominator. This is the easy part.
+    #     denom = 1.5*np.log(np.pi) + (-n/2.0 + 0.5)*(np.log(n*var)) + self.loggamma[n]
+    #
+    #     # BEGIN weight calculation
+    #     # the numerator. A little trickier.
+    #     weights = []  # the change cannot have occurred in the last 3 points
+    #     for i in range(1, len(partitions)):
+    #         partitions_a = partitions[0:i]
+    #         partitions_b = partitions[i:]
+    #         data_a = obs[partitions_a[0][0]:partitions_a[0][1]]
+    #         for p in partitions_a[1:]:
+    #             data_a = np.concatenate((data_a, obs[p[0]:p[1]]))
+    #         n_a = len(data_a)
+    #         data_b = obs[partitions_b[0][0]:partitions_b[0][1]]
+    #         for p in partitions_b[1:]:
+    #             data_b = np.concatenate((data_b, obs[p[0]:p[1]]))
+    #         n_b = len(data_b)
+    #
+    #         mean_a, var_a = self._distribution.mean_var(data_a)
+    #         mean_b, var_b = self._distribution.mean_var(data_b)
+    #
+    #         mean_a2 = mean_a**2
+    #         mean_b2 = mean_b**2
+    #
+    #         wnumf1 = (-0.5*n_a + 0.5)*np.log(n_a) + (-0.5*n_a + 1)*np.log(var_a) + self.loggamma[n_a]
+    #         wnumf2 = (-0.5*n_b + 0.5)*np.log(n_b) + (-0.5*n_b + 1)*np.log(var_b) + self.loggamma[n_b]
+    #
+    #         wdenom = np.log(var_a + var_b) + np.log(mean_a2*mean_b2)
+    #
+    #         weights.append((wnumf1 + wnumf2) - wdenom)
+    #
+    #     weights = np.array(weights)
+    #     # END weight calculation
+    #
+    #     num = 2.5*np.log(2.0) + np.log(abs(mean)) + weights.mean()
+    #     log_odds = num - denom
+    #     logger().debug('    log num: ' + str(num))
+    #     logger().debug('    denom: ' + str(denom))
+    #     logger().debug('    log odds: ' + str(log_odds))
+    #
+    #     # If there is a change point, then logodds will be greater than 0
+    #     # Check for nan. This comes up if using log normal for a normal distribution.
+    #     if math.isnan(log_odds):
+    #         raise ValueError('Are you using the correct distribution?')
+    #     if log_odds < self.threshold:
+    #
+    #         logger().debug('    Log Odds: ' + str(log_odds) + ' is less than threshold ' + str(self.threshold) +
+    #                       '. No change point found')
+    #         return None
+    #     return weights.argmax(), log_odds
+    #
+    # def _unique_states(self, itraj):
+    #     pass
+
 
     def to_csv(self, filename=None):
         """
