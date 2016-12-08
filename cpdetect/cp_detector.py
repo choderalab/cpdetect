@@ -94,7 +94,7 @@ class Detector(object):
         # the numerator. A little trickier.
         weights = [0, 0, 0]  # the change cannot have occurred in the last 3 points
 
-        for i in range(3, n-3):
+        for i in range(3, n-2):
             data_a = obs[0:i]
             n_a = len(data_a)
             data_b = obs[i:]
@@ -116,9 +116,9 @@ class Detector(object):
         weights.extend([0, 0])  # the change cannot have occurred at the last 2 points
         weights = np.array(weights)
         # END weight calculation
-
         num = 2.5*np.log(2.0) + np.log(abs(mean)) + weights.mean()
         log_odds = num - denom
+        weights[0] = weights[1] = weights[2] = weights[-1] = weights[-2] = -np.inf
         logger().debug('    log num: ' + str(num))
         logger().debug('    denom: ' + str(denom))
         logger().debug('    log odds: ' + str(log_odds))
