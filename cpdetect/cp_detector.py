@@ -234,7 +234,7 @@ class Detector(object):
 
         # generate step function
         self.step_function['traj_%s' % str(itraj)] = np.ones(self.observation_lengths[itraj]-1)
-        for index, row in self.state_emission['traj_0'].iterrows():
+        for index, row in self.state_emission['traj_%s' % str(itraj)].iterrows():
             self.step_function['traj_%s' % str(itraj)][row['partition'][0]:row['partition'][1]+1] = \
                 np.exp(row['sample_mu'])
 
