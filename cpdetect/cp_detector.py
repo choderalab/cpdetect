@@ -156,7 +156,7 @@ class Detector(object):
 
         for k in range(self._nobs):
             logger().info('Running cp detector on traj ' + str(k))
-            logger().info('--------------------------------')
+            logger().info('---------------------------------')
             self.change_points['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
             obs = self._observations[k]
             self._split(obs, 0, self.observation_lengths[k], k)
@@ -210,6 +210,12 @@ class Detector(object):
 
         # First sort ts of traj
         ts = self.change_points['traj_%s' % str(itraj)]['ts'].values
+        if len(ts) == 0:
+            logger().info('No change point was found')
+            self.step_function['traj_%s' % str(itraj)] = np.ones(self.observation_lengths[itraj]-1)
+            mean, var = self._distribution.mean_var(obs)
+            self.step_function['traj_%s' % str(itraj)] = self.step_function['traj_%s' % str(itraj)]*np.exp(mean)
+            return
         ts.sort()
         # populate data frame with partitions, sample mean and sigma
         partitions = [(0, int(ts[0]))]
@@ -250,10 +256,10 @@ class Detector(object):
         frames = []
         for i in self.change_points:
             frames.append(self.change_points[i])
-        all = pd.concat(frames)
+        all_f = pd.concat(frames)
 
         if filename:
-            all.to_csv(filename)
+            all_f.to_csv(filename)
         else:
             return all.to_csv()
 
