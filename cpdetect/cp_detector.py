@@ -118,6 +118,7 @@ class Detector(object):
         # END weight calculation
         num = 2.5*np.log(2.0) + np.log(abs(mean)) + weights.mean()
         log_odds = num - denom
+        # Replace points where change cannot occur with negative infinity so that they cannot be argmax
         weights[0] = weights[1] = weights[2] = weights[-1] = weights[-2] = -np.inf
         logger().debug('    log num: ' + str(num))
         logger().debug('    denom: ' + str(denom))
@@ -160,7 +161,7 @@ class Detector(object):
             self.change_points['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
             obs = self._observations[k]
             self._split(obs, 0, self.observation_lengths[k], k)
-            logger().info('Finding state means for segments')
+            logger().info('Generating step fucntion')
             logger().info('---------------------------------')
             self._generate_step_function(obs, k)
 
@@ -195,7 +196,7 @@ class Detector(object):
                     {'ts': ts, 'log_odds': log_odds, 'start_end': (start, end)}, ignore_index=True)
             logger().info('    Found a new change point at: ' + str(ts) + '!!')
             self._split(obs, start, ts, itraj)
-            self._split(obs, ts+1, end, itraj)
+            self._split(obs, ts, end, itraj)
 
     def _generate_step_function(self, obs, itraj):
         """Draw step function based on sample mean
