@@ -12,6 +12,7 @@ import time
 import pandas as pd
 import math
 from scipy.special import gammaln
+from collections import OrderedDict
 
 
 class Detector(object):
@@ -255,12 +256,11 @@ class Detector(object):
             csv if no filename given. Otherwise, saves csv file
         """
         frames = []
-        for i, j in enumerate(self.change_points):
-            names = tuple(str(i) for k in range(len(self.change_points[j])))
-            index = [str(i) for k in range(len(self.change_points[j]))]
-            self.change_points[j].index = pd.MultiIndex.from_tuples(index, names=names)
-            frames.append(self.change_points[j])
-        all_f = pd.concat(frames)
+        keys = []
+        for i in self.change_points:
+            keys.append(i)
+            frames.append(self.change_points[i])
+        all_f = pd.concat(frames, keys=keys)
 
         if filename:
             all_f.to_csv(filename)
