@@ -12,6 +12,7 @@ import time
 import pandas as pd
 import math
 from scipy.special import gammaln
+from collections import OrderedDict
 
 
 class Detector(object):
@@ -39,8 +40,10 @@ class Detector(object):
         self._nobs = len(observations)
         self._Ts = [len(o) for o in observations]
         self.change_points = {}  # Dictionary containing change point time and its likelihood
+        self.state_emission = {}  # Dictionary containing state's mean and sigma for segment
         self.loggamma = [-99, -99, -99]
         self.threshold = log_odds_threshold
+        self.step_function = {}
 
         if distribution == 'log_normal':
             self._distribution = LogNormal()
@@ -92,7 +95,7 @@ class Detector(object):
         # the numerator. A little trickier.
         weights = [0, 0, 0]  # the change cannot have occurred in the last 3 points
 
-        for i in range(3, n-3):
+        for i in range(3, n-2):
             data_a = obs[0:i]
             n_a = len(data_a)
             data_b = obs[i:]
@@ -114,9 +117,10 @@ class Detector(object):
         weights.extend([0, 0])  # the change cannot have occurred at the last 2 points
         weights = np.array(weights)
         # END weight calculation
-
         num = 2.5*np.log(2.0) + np.log(abs(mean)) + weights.mean()
         log_odds = num - denom
+        # Replace points where change cannot occur with negative infinity so that they cannot be argmax
+        weights[0] = weights[1] = weights[2] = weights[-1] = weights[-2] = -np.inf
         logger().debug('    log num: ' + str(num))
         logger().debug('    denom: ' + str(denom))
         logger().debug('    log odds: ' + str(log_odds))
@@ -154,11 +158,13 @@ class Detector(object):
 
         for k in range(self._nobs):
             logger().info('Running cp detector on traj ' + str(k))
-            logger().info('--------------------------------')
+            logger().info('---------------------------------')
             self.change_points['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
             obs = self._observations[k]
             self._split(obs, 0, self.observation_lengths[k], k)
-            self._emitting_state(k)
+            logger().info('Generating step fucntion')
+            logger().info('---------------------------------')
+            self._generate_step_function(obs, k)
 
         final_time = time.time()
 
@@ -191,11 +197,54 @@ class Detector(object):
                     {'ts': ts, 'log_odds': log_odds, 'start_end': (start, end)}, ignore_index=True)
             logger().info('    Found a new change point at: ' + str(ts) + '!!')
             self._split(obs, start, ts, itraj)
-            self._split(obs, ts+1, end, itraj)
+            self._split(obs, ts, end, itraj)
 
-    def _emitting_state(self, itraj):
-        # Find emitting state to draw the step funciont
-        pass
+    def _generate_step_function(self, obs, itraj):
+        """Draw step function based on sample mean
+
+        :parameter obs
+            trajectory
+        :parameter itraj: int
+            index of trajectory
+        """
+
+        self.state_emission['traj_%s' % str(itraj)] = pd.DataFrame(columns=['partition', 'sample_mu', 'sample_sigma'])
+
+        # First sort ts of traj
+        ts = self.change_points['traj_%s' % str(itraj)]['ts'].values
+        if len(ts) == 0:
+            logger().info('No change point was found')
+            self.step_function['traj_%s' % str(itraj)] = np.ones(self.observation_lengths[itraj]-1)
+            mean, var = self._distribution.mean_var(obs)
+            self.step_function['traj_%s' % str(itraj)] = self.step_function['traj_%s' % str(itraj)]*np.exp(mean)
+            return
+        ts.sort()
+        # populate data frame with partitions, sample mean and sigma
+        partitions = [(0, int(ts[0]))]
+        mean, var = self._distribution.mean_var(obs[0:ts[0]])
+        means = [mean]
+        sigmas = [var]
+        for i, j in enumerate(ts):
+            try:
+                partitions.append((int(j+1), int(ts[i+1])))
+                mean, var = self._distribution.mean_var(obs[j+1:ts[i+1]])
+                means.append(mean)
+                sigmas.append(var)
+
+            except IndexError:
+                partitions.append((int(ts[-1]+1), int(self.observation_lengths[itraj]-1)))
+                mean, var = self._distribution.mean_var(obs[ts[-1]+1:len(obs)-1])
+                means.append(mean)
+                sigmas.append(var)
+        self.state_emission['traj_%s' % str(itraj)]['partition'] = partitions
+        self.state_emission['traj_%s' % str(itraj)]['sample_mu'] = means
+        self.state_emission['traj_%s' % str(itraj)]['sample_sigma'] = sigmas
+
+        # generate step function
+        self.step_function['traj_%s' % str(itraj)] = np.ones(self.observation_lengths[itraj])
+        for index, row in self.state_emission['traj_%s' % str(itraj)].iterrows():
+            self.step_function['traj_%s' % str(itraj)][row['partition'][0]:row['partition'][1]+1] = \
+                np.exp(row['sample_mu'])
 
     def to_csv(self, filename=None):
         """
@@ -207,12 +256,14 @@ class Detector(object):
             csv if no filename given. Otherwise, saves csv file
         """
         frames = []
+        keys = []
         for i in self.change_points:
+            keys.append(i)
             frames.append(self.change_points[i])
-        all = pd.concat(frames)
+        all_f = pd.concat(frames, keys=keys)
 
         if filename:
-            all.to_csv(filename)
+            all_f.to_csv(filename)
         else:
             return all.to_csv()
 
