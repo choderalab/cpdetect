@@ -255,8 +255,11 @@ class Detector(object):
             csv if no filename given. Otherwise, saves csv file
         """
         frames = []
-        for i in self.change_points:
-            frames.append(self.change_points[i])
+        for i, j in enumerate(self.change_points):
+            names = tuple(str(i) for k in range(len(self.change_points[j])))
+            index = [str(i) for k in range(len(self.change_points[j]))]
+            self.change_points[j].index = pd.MultiIndex.from_tuples(index, names=names)
+            frames.append(self.change_points[j])
         all_f = pd.concat(frames)
 
         if filename:
