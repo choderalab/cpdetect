@@ -127,7 +127,7 @@ class Detector(object):
         logger().debug('    denom: ' + str(denom))
         logger().debug('    log odds: ' + str(log_odds))
 
-        norm = logsumexp(weights[3:-3])
+        norm = logsumexp(weights[3:-2])
         normalized_prob = np.exp(weights[3:-3] - norm)
 
         # If there is a change point, then logodds will be greater than 0
@@ -197,8 +197,9 @@ class Detector(object):
             logger().debug("     Can't split segment with less than 6 points.")
             return
         elif result[-1] is None:
+            ts = start + result[1]
             logger().debug("      Can't split segment start at " + str(start) + " end at " + str(end))
-            self.no_split['traj_%s' % str(itraj)] = self.no_split['traj_%s' % str(itraj)].append({'ts': result[1],
+            self.no_split['traj_%s' % str(itraj)] = self.no_split['traj_%s' % str(itraj)].append({'ts': ts,
             'log_odds': result[2], 'start_end': (start, end), 'prob_ts': result[0]}, ignore_index=True)
             return
         else:
