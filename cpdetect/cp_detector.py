@@ -13,6 +13,7 @@ import pandas as pd
 import math
 from scipy.special import gammaln
 from collections import OrderedDict
+from scipy.misc import logsumexp
 
 
 class Detector(object):
@@ -40,6 +41,7 @@ class Detector(object):
         self._nobs = len(observations)
         self._Ts = [len(o) for o in observations]
         self.change_points = {}  # Dictionary containing change point time and its likelihood
+        self.no_split = {}
         self.state_emission = {}  # Dictionary containing state's mean and sigma for segment
         self.loggamma = [-99, -99, -99]
         self.threshold = log_odds_threshold
@@ -125,6 +127,9 @@ class Detector(object):
         logger().debug('    denom: ' + str(denom))
         logger().debug('    log odds: ' + str(log_odds))
 
+        norm = logsumexp(weights[3:-3])
+        normalized_prob = np.exp(weights[3:-3] - norm)
+
         # If there is a change point, then logodds will be greater than 0
         # Check for nan. This comes up if using log normal for a normal distribution.
         if math.isnan(log_odds):
@@ -133,8 +138,9 @@ class Detector(object):
 
             logger().debug('    Log Odds: ' + str(log_odds) + ' is less than threshold ' + str(self.threshold) +
                           '. No change point found')
-            return None
-        return weights.argmax(), log_odds
+            return normalized_prob, weights.argmax(), log_odds, None
+
+        return normalized_prob, weights.argmax(), log_odds
 
     def _generate_loggamma_table(self):
         """
@@ -160,6 +166,7 @@ class Detector(object):
             logger().info('Running cp detector on traj ' + str(k))
             logger().info('---------------------------------')
             self.change_points['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
+            self.no_split['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
             obs = self._observations[k]
             self._split(obs, 0, self.observation_lengths[k], k)
             logger().info('Generating step fucntion')
@@ -186,15 +193,20 @@ class Detector(object):
         # recursive function to find all ts and logg odds
         logger().debug('    Trying to split segment start at ' + str(start) + ' end ' + str(end))
         result = self._normal_lognormal_bf(obs[start:end])
-
         if result is None:
+            logger().debug("     Can't split segment with less than 6 points.")
+            return
+        elif result[-1] is None:
             logger().debug("      Can't split segment start at " + str(start) + " end at " + str(end))
+            self.no_split['traj_%s' % str(itraj)] = self.no_split['traj_%s' % str(itraj)].append({'ts': result[1],
+            'log_odds': result[2], 'start_end': (start, end), 'prob_ts': result[0]}, ignore_index=True)
             return
         else:
             log_odds = result[-1]
-            ts = start + result[0]
+            ts = start + result[1]
+            prob_ts = result[0]
             self.change_points['traj_%s' % str(itraj)] = self.change_points['traj_%s' % str(itraj)].append(
-                    {'ts': ts, 'log_odds': log_odds, 'start_end': (start, end)}, ignore_index=True)
+                    {'ts': ts, 'log_odds': log_odds, 'start_end': (start, end), 'prob_ts': prob_ts}, ignore_index=True)
             logger().info('    Found a new change point at: ' + str(ts) + '!!')
             self._split(obs, start, ts, itraj)
             self._split(obs, ts, end, itraj)
@@ -236,6 +248,8 @@ class Detector(object):
                 mean, var = self._distribution.mean_var(obs[ts[-1]+1:len(obs)-1])
                 means.append(mean)
                 sigmas.append(var)
+            except ValueError:
+                pass
         self.state_emission['traj_%s' % str(itraj)]['partition'] = partitions
         self.state_emission['traj_%s' % str(itraj)]['sample_mu'] = means
         self.state_emission['traj_%s' % str(itraj)]['sample_sigma'] = sigmas
