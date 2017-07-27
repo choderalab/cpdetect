@@ -26,7 +26,7 @@ def nfl_filter(traj, windows, M, p):
         NLF filtered trajectory
     """
     start_index = max(windows) + M
-    filtered_traj = np.zeros(len(traj))
+    filtered_traj = np.zeros(len(traj)-2*start_index)
     I_forward = np.zeros((len(windows), len(traj) - 2*start_index))
     I_reverse = np.zeros((len(windows), len(traj) - 2*start_index))
     for i in range(I_forward.shape[-1]):
@@ -45,11 +45,9 @@ def nfl_filter(traj, windows, M, p):
         c = f_k.sum() + b_k.sum()
 
         for k in range(len(windows)):
-            filtered_traj[i] += f_k[k]*I_forward[k, i-start_index] + \
+            filtered_traj[i-start_index] += f_k[k]*I_forward[k, i-start_index] + \
             b_k[k]*I_reverse[k, i-start_index]
-        filtered_traj[i] /= c
-    filtered_traj[:start_index] = traj[:start_index]
-    filtered_traj[-start_index:] = traj[-start_index:]
+        filtered_traj[i-start_index] /= c
     return filtered_traj
 
 
