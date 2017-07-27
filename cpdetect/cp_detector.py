@@ -46,6 +46,7 @@ class Detector(object):
         self.loggamma = [-99, -99, -99]
         self.threshold = log_odds_threshold
         self.step_function = {}
+        self.refined_change_points = {} # Dictionary containing new change points found during refinement.
 
         if distribution == 'log_normal':
             self._distribution = LogNormal()
@@ -166,7 +167,9 @@ class Detector(object):
             logger().info('Running cp detector on traj ' + str(k))
             logger().info('---------------------------------')
             self.change_points['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
+            self.change_points['traj_%s' % str(k)]['ts'] = self.change_points['traj_%s' %str(k)]['ts'].astype(int)
             self.no_split['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
+            self.no_split['traj_%s' % str(k)]['ts'] = self.no_split['traj_%s' %str(k)]['ts'].astype(int)
             obs = self._observations[k]
             self._split(obs, 0, self.observation_lengths[k], k)
             logger().info('Generating step fucntion')
@@ -212,7 +215,7 @@ class Detector(object):
             self._split(obs, start, ts, itraj)
             self._split(obs, ts, end, itraj)
 
-    def _generate_step_function(self, obs, itraj):
+    def _generate_step_function(self, obs, itraj, refined=False):
         """Draw step function based on sample mean
 
         :parameter obs
@@ -224,14 +227,16 @@ class Detector(object):
         self.state_emission['traj_%s' % str(itraj)] = pd.DataFrame(columns=['partition', 'sample_mu', 'sample_sigma'])
 
         # First sort ts of traj
-        ts = self.change_points['traj_%s' % str(itraj)]['ts'].values
+        ts = self.change_points['traj_%s' % str(itraj)]['ts']
+        if refined:
+            ts = ts.append(self.refined_change_points['traj_{}'.format(itraj)]['ts'])
         if len(ts) == 0:
             logger().info('No change point was found')
             self.step_function['traj_%s' % str(itraj)] = np.ones(self.observation_lengths[itraj]-1)
             mean, var = self._distribution.mean_var(obs)
             self.step_function['traj_%s' % str(itraj)] = self.step_function['traj_%s' % str(itraj)]*np.exp(mean)
             return
-        ts.sort()
+        ts = ts.drop_duplicates().sort_values().values
         # populate data frame with partitions, sample mean and sigma
         partitions = [(0, int(ts[0]))]
         mean, var = self._distribution.mean_var(obs[0:ts[0]])
@@ -261,6 +266,60 @@ class Detector(object):
             self.step_function['traj_%s' % str(itraj)][row['partition'][0]:row['partition'][1]+1] = \
                 np.exp(row['sample_mu'])
 
+    def refinement(self, threshold=0, split_window=50, reject_window=10):
+        """
+        This function goes through all rejected splits and recalculates the Bayes factor on splits of the segments. The
+        splits are given by the ts + and - the split window. If a new change point is found, it will be accepted given
+        that the log odds are above the threshold and there is no other predicted change point within the reject window.
+
+        Parameters
+        ----------
+        threshold : float or int
+            log odds threshold to accept a split
+        split_window : int
+            how many points out of rejected split to calculate Bayes Factor
+        reject_window : int
+            The window for which another predicted change point will be considered equal to a new change point
+
+        """
+
+        for t in range(self.nobservations):
+            self.refined_change_points['traj_{}'.format(str(t))] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
+            self.refined_change_points['traj_%s' % str(t)]['ts'] = self.refined_change_points['traj_%s'
+                                                                                            % str(t)]['ts'].astype(int)
+            predicted_ts = np.array(self.change_points['traj_{}'.format(t)]['ts'])
+            for index, row in self.no_split['traj_{}'.format(t)].iterrows():
+                start, end = row['start_end']
+                ts = row['ts']
+                new_splits = [(start, ts + split_window), (ts - split_window, end)]
+                obs1 = self._observations[t][new_splits[0][0]:new_splits[0][1]]
+                obs2 = self._observations[t][new_splits[1][0]:new_splits[1][1]]
+                bf = self._normal_lognormal_bf(obs1)
+
+                if bf is not None and bf[2] > threshold:
+                    new_ts = bf[1] + new_splits[0][0]
+                    if not np.any((predicted_ts < new_ts + reject_window) & (predicted_ts > new_ts - reject_window)):
+                        logger().info('Found a new change point in traj {} at {}'.format(t, new_ts))
+                        self.refined_change_points['traj_{}'.format(str(t))] = self.refined_change_points[
+                            'traj_{}'.format(t)].append({'ts': new_ts, 'log_odds': bf[2], 'start_end': new_splits[0]},
+                                                        ignore_index=True)
+
+                bf = self._normal_lognormal_bf(obs2)
+                if bf is not None and bf[2] > threshold:
+                    new_ts = bf[1] + new_splits[1][0]
+                    if not np.any((predicted_ts < new_ts + reject_window) & (predicted_ts > new_ts - reject_window)):
+                        logger().info('Found a new change point in traj {} at {}'.format(t, new_ts))
+                        self.refined_change_points['traj_{}'.format(str(t))] = self.refined_change_points[
+                            'traj_{}'.format(t)].append({'ts': new_ts, 'log_odds': bf[2], 'start_end': new_splits[1]},
+                                                        ignore_index=True)
+
+            self.refined_change_points['traj_{}'.format(str(t))]['ts'].drop_duplicates(inplace=True)
+
+    def regenerate_step_function(self):
+        for t in range(self.nobservations):
+            obs = self._observations[t]
+            self._generate_step_function(obs, t, refined=True)
+
     def to_csv(self, filename=None):
         """
         export change_points data frame to csv file
@@ -281,6 +340,7 @@ class Detector(object):
             all_f.to_csv(filename)
         else:
             return all.to_csv()
+
 
 class LogNormal(object):
 
