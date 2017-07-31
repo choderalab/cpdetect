@@ -21,6 +21,7 @@ Usage
 To run `cpDetect`, the timeseries data needs to be a list of 1-D numpy arrays. They do not have to be of the same size
 First, instantiate the detector. Choose the underlying distribution (normal or log normal) and the log odds threshold
 (default is 0). 
+
 ```
 detector = cpDetector(trajs, distribution='log_normal', log_odds_threshold=0)
 detector.detect_cp()
@@ -54,6 +55,11 @@ df.to_csv('step_function.csv')
 ```
 
 See `examples/` for confusion matrices and more on the refinement step.
+
+Filtering
+---------
+
+`nonlinear_filter.py` implements the non-linear filter from Chung and Kennedy [DOI](https://www.ncbi.nlm.nih.gov/pubmed/1795554)
 
 Reference
 ---------
