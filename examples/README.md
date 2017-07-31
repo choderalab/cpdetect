@@ -5,7 +5,7 @@ All examples are on randomly generated synthetic data
 
 Manifest
 --------
-* **simple example:**
+* **Simple example:**
 
 
  
