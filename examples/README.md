@@ -5,7 +5,7 @@ All examples are on randomly generated synthetic data
 
 Manifest
 --------
-* simple example:
+* **simple example:**
 
 
  
@@ -15,7 +15,7 @@ Manifest
 `synthetic_data.ipynb` - notebook that generated synthetic trajectories
 `synthetic.pdf` - plots of all synthetic trajectories and true step functions (in red).
 
-* Confusion matrices:
+* **Confusion matrices:**
 
 
     `example_nonfiltered.py` - run cpDetect with several different thresholds
@@ -32,7 +32,7 @@ Manifest
     While cpDetect on filtered data misses less change points, it also founds many
     false positives. Use a higher threshold when data is filtered. 
 
-* Clean up step (refinement)
+* **Clean up step (refinement):**
 
 
     `refinement.ipynb` - ipython notebook illustrating refinement step
