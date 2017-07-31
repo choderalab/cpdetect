@@ -6,6 +6,8 @@ All examples are on randomly generated synthetic data
 Manifest
 --------
 * simple example:
+
+
  
     `example.ipynb` - simple example on 2 trajectories
     `ts_log_odss.csv` - saved change points from simple example
@@ -14,6 +16,8 @@ Manifest
 `synthetic.pdf` - plots of all synthetic trajectories and true step functions (in red).
 
 * Confusion matrices:
+
+
     `example_nonfiltered.py` - run cpDetect with several different thresholds
     to calculate confusion matrices for each. Data was not filtered.
     `example_filtered.py` - run cpDetect on filtered data with several different
@@ -29,6 +33,8 @@ Manifest
     false positives. Use a higher threshold when data is filtered. 
 
 * Clean up step (refinement)
+
+
     `refinement.ipynb` - ipython notebook illustrating refinement step
     `confusion_matrix.png` - confusion matrix before refinement
     `refined_confusion_matrix.png` - confusion matrix after refinement
