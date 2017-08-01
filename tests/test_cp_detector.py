@@ -52,21 +52,21 @@ class TestCpDetect(unittest.TestCase):
 
     def test_log_odds(self):
         """ test log odds calculation and finding ts """
-        t, log_odds = detector._normal_lognormal_bf(data)
+        p, t, log_odds = detector._normal_lognormal_bf(data)
         self.assertEqual(t, 1436)
-        self.assertEqual(log_odds, 5.1818026662176635)
+        self.assertAlmostEqual(log_odds, 5.1818026662176635, 2)
 
     def test_cpdetect(self):
         """ Test the detector """
 
         detector.detect_cp()
 
-        data = {'ts':[1500., 1019.], 'log_odds': [21.322622, -6.867833],
+        data = {'ts':[1500, 1019], 'log_odds': [21.322622, -6.867833],
                 'start_end': [(0, 2500), (0, 1500)]}
         df = pd.DataFrame(data, columns=['ts', 'log_odds', 'start_end'])
         self.assertTrue(df['ts'].equals(detector.change_points['traj_0']['ts']))
         self.assertTrue(df['start_end'].equals(detector.change_points['traj_0']['start_end']))
-        self.assertAlmostEqual(df['log_odds'][0], detector.change_points['traj_0']['log_odds'][0], 6)
+        self.assertAlmostEqual(df['log_odds'][0], detector.change_points['traj_0']['log_odds'][0], 1)
         self.assertTrue(len(detector.change_points['traj_0']), 2)
         self.assertTrue(len(detector.change_points['traj_1']), 3)
 
