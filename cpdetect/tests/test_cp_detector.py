@@ -2,13 +2,14 @@
 
 from cpdetect import cpDetector
 from cpdetect.cp_detector import (Normal, LogNormal)
+from cpdetect.tests.utils import get_fn
 import numpy as np
 import unittest
 import pandas as pd
 from scipy.special import gammaln
 
-data = np.load('files/data.npy')
-data_2 = np.load('files/data2.npz')
+data = np.load(get_fn('data.npy'))
+data_2 = np.load(get_fn('data2.npz'))
 
 # Convert to cpDetect format
 data_2 = [data_2[i] for i in data_2.files]

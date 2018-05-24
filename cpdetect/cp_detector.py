@@ -20,16 +20,31 @@ class Detector(object):
     """
     Bayesian change point detection.
 
-    :parameter
-    observations: list of numpy arrays
-        trajectories to find change point
-    distribution: str
-        distribution of underlying process (normal or log_normal)
-    log_odds_threshold: int
-        desired threshold. If log odds (log of Bayes factor) is greater than this threshold, segment will be split.
+    Attributes
+    ----------
+    change_points: dict of pandas dataframes
+        This dictionary maps the trajectory to time point split, the log_odds, start, end and probability of the time points
+    no_split: dict of pandas dataframes
+        This dictionary maps trajectory to time points that have a peak in probability of splitting but is below the threshold.
+        This is used for the refinement step
+    state_emission: dict of pandas dataframes
+        This dict maps trajectories to the sampel mu and sigma of the split segment. It's used to generate the step function
+    log_gamme: log gamma for all Ns
+    threshold: int
+        log odds threshold to split. Default is 0. The lower the threshold, the more sensitive the splitting
+    step_function: dict of arrays
+        maps trajectory to numpy array of step function
+    refined_change_point: dict of pandas dataframes
+        If the refinment function is used, this dictionary will be populated with the new splits found
+    window_size: int
+        How many datapoints to include in the moving window. Defualt is None. When the default is none, no moving window
+        is used
+    stride: int
+        The stride of the moving window. If None, no moving window is used. Default is None
+
     """
 
-    def __init__(self, observations, distribution, log_odds_threshold=0):
+    def __init__(self, observations, distribution, log_odds_threshold=0, window_size=None, stride=None):
         """
 
         :param observations: list of numpy arrays
@@ -47,6 +62,12 @@ class Detector(object):
         self.threshold = log_odds_threshold
         self.step_function = {}
         self.refined_change_points = {} # Dictionary containing new change points found during refinement.
+
+        self.window_size = window_size
+        self.stride = stride
+        self.moving_window = False
+        if window_size is not None:
+            self.moving_window = True
 
         if distribution == 'log_normal':
             self._distribution = LogNormal()
@@ -170,17 +191,25 @@ class Detector(object):
             self.change_points['traj_%s' % str(k)]['ts'] = self.change_points['traj_%s' %str(k)]['ts'].astype(int)
             self.no_split['traj_%s' %str(k)] = pd.DataFrame(columns=['ts', 'log_odds', 'start_end'])
             self.no_split['traj_%s' % str(k)]['ts'] = self.no_split['traj_%s' %str(k)]['ts'].astype(int)
-            obs = self._observations[k]
-            self._split(obs, 0, self.observation_lengths[k], k)
+            obs_full = self._observations[k]
+            if self.window_size:
+                # Iterate splitting algorithm over window
+                chunks = (obs_full.shape[0]-self.window_size)/self.stride + 1
+                indexer = np.arange(self.window_size)[None, :] + self.stride*np.arange(int(chunks))[:, None]
+                observations = obs_full[indexer]
+                for obs, index in zip(observations, indexer):
+                    self._split(obs, 0,  self.window_size-1, k, indexer=index)
+            else:
+                self._split(obs_full, 0, self.observation_lengths[k], k)
             logger().info('Generating step fucntion')
             logger().info('---------------------------------')
-            self._generate_step_function(obs, k)
+            self._generate_step_function(obs_full, k)
 
         final_time = time.time()
 
         logger().info('Elapsed time: ' + str(final_time-initial_time))
 
-    def _split(self, obs, start, end,  itraj):
+    def _split(self, obs, start, end,  itraj, indexer=None):
         """
         This function takes an array of observations and checks if it should be split
 
@@ -201,6 +230,10 @@ class Detector(object):
             return
         elif result[-1] is None:
             ts = start + result[1]
+            if indexer is not None:
+                ts = indexer[ts]
+                start = indexer[start]
+                end = indexer[end]
             logger().debug("      Can't split segment start at " + str(start) + " end at " + str(end))
             self.no_split['traj_%s' % str(itraj)] = self.no_split['traj_%s' % str(itraj)].append({'ts': ts,
             'log_odds': result[2], 'start_end': (start, end), 'prob_ts': result[0]}, ignore_index=True)
@@ -209,11 +242,16 @@ class Detector(object):
             log_odds = result[-1]
             ts = start + result[1]
             prob_ts = result[0]
-            self.change_points['traj_%s' % str(itraj)] = self.change_points['traj_%s' % str(itraj)].append(
+            if indexer is None:
+                self.change_points['traj_%s' % str(itraj)] = self.change_points['traj_%s' % str(itraj)].append(
                     {'ts': ts, 'log_odds': log_odds, 'start_end': (start, end), 'prob_ts': prob_ts}, ignore_index=True)
+            else:
+                self.change_points['traj_%s' % str(itraj)] = self.change_points['traj_%s' % str(itraj)].append(
+                    {'ts': indexer[ts], 'log_odds': log_odds, 'start_end': (indexer[start], indexer[end]), 'prob_ts': prob_ts}, ignore_index=True)
+
             logger().info('    Found a new change point at: ' + str(ts) + '!!')
-            self._split(obs, start, ts, itraj)
-            self._split(obs, ts, end, itraj)
+            self._split(obs, start, ts, itraj, indexer)
+            self._split(obs, ts, end, itraj, indexer)
 
     def _generate_step_function(self, obs, itraj, refined=False):
         """Draw step function based on sample mean
@@ -254,6 +292,7 @@ class Detector(object):
                 mean, var = self._distribution.mean_var(obs[ts[-1]+1:len(obs)-1])
                 means.append(mean)
                 sigmas.append(var)
+
             except ValueError:
                 pass
         self.state_emission['traj_%s' % str(itraj)]['partition'] = partitions
@@ -367,4 +406,3 @@ class Normal(object):
     @classmethod
     def mean_var(cls, data):
         return data.mean(), data.var()
-
