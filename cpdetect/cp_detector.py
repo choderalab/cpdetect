@@ -20,13 +20,28 @@ class Detector(object):
     """
     Bayesian change point detection.
 
-    :parameter
-    observations: list of numpy arrays
-        trajectories to find change point
-    distribution: str
-        distribution of underlying process (normal or log_normal)
-    log_odds_threshold: int
-        desired threshold. If log odds (log of Bayes factor) is greater than this threshold, segment will be split.
+    Attributes
+    ----------
+    change_points: dict of pandas dataframes
+        This dictionary maps the trajectory to time point split, the log_odds, start, end and probability of the time points
+    no_split: dict of pandas dataframes
+        This dictionary maps trajectory to time points that have a peak in probability of splitting but is below the threshold.
+        This is used for the refinement step
+    state_emission: dict of pandas dataframes
+        This dict maps trajectories to the sampel mu and sigma of the split segment. It's used to generate the step function
+    log_gamme: log gamma for all Ns
+    threshold: int
+        log odds threshold to split. Default is 0. The lower the threshold, the more sensitive the splitting
+    step_function: dict of arrays
+        maps trajectory to numpy array of step function
+    refined_change_point: dict of pandas dataframes
+        If the refinment function is used, this dictionary will be populated with the new splits found
+    window_size: int
+        How many datapoints to include in the moving window. Defualt is None. When the default is none, no moving window
+        is used
+    stride: int
+        The stride of the moving window. If None, no moving window is used. Default is None
+
     """
 
     def __init__(self, observations, distribution, log_odds_threshold=0, window_size=None, stride=None):
@@ -50,6 +65,9 @@ class Detector(object):
 
         self.window_size = window_size
         self.stride = stride
+        self.moving_window = False
+        if window_size is not None:
+            self.moving_window = True
 
         if distribution == 'log_normal':
             self._distribution = LogNormal()
