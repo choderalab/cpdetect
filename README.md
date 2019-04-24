@@ -50,7 +50,7 @@ detector.to_csv('filename.csv')
 You can save the step function to a pandas data frame:
 
 ```
-df = pd.DataFreame.from_dict(detector.step_function, orient='index')
+df = pd.DataFrame.from_dict(detector.step_function, orient='index')
 df.to_csv('step_function.csv')
 ```
 
